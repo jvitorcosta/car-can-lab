@@ -15,6 +15,8 @@
 #include "net/ota.h"
 #include "net/remote_config.h"
 #include "net/wifi.h"
+#include "sniff/store.h"
+#include "sniff/web.h"
 #include "ui/backlight.h"
 #include "ui/termfont.h"
 #include "util/otapage.h"
@@ -82,8 +84,10 @@ static void netTask(void*) {
     }
     netclock::begin();
     ota::begin(MDNS_NAME);
+    sniff::web::begin();
     Serial.printf("[net] on: %s\n", net::deviceIp().c_str());
     for (;;) {
+        if (!ota::active()) sniff::web::loop();
         net::loop();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -125,6 +129,19 @@ void setup() {
     touch::begin();
     calibrated = loadCalibration();
     drawBoot();
+    sniff::store::begin();
+#ifdef STORE_TEST
+    // Test hook (-D STORE_TEST): a recording of 1,000 made-up F lines, to check the download.
+    int n = 0;
+    if (sniff::store::open(&n)) {
+        char line[40];
+        for (int i = 0; i < 1000; i++) {
+            snprintf(line, sizeof line, "F %d %03X 00 %02X", i * 10, 0x100 + i % 32, i & 0xFF);
+            sniff::store::write(line);
+        }
+        sniff::store::close();
+    }
+#endif
     if (REMOTE_TOKEN[0]) xTaskCreatePinnedToCore(netTask, "net", 6144, nullptr, 0, nullptr, 1);
     else Serial.println("[net] off (REMOTE_TOKEN empty)");
 }

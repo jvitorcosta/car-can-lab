@@ -1,0 +1,9 @@
+.pio/
+.vscode/
+.superpowers/
+__pycache__/
+# secrets (an example file is committed)
+include/secrets.h
+# raw recordings from the car stay local
+recordings/
+*.log

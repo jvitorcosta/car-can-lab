@@ -24,7 +24,7 @@ public:
     void next();
     // The current window becomes its two halves, both kept in the cycle, current on the first.
     // Nothing at MIN_SIZE, or with MAX_WINDOWS already planned.
-    void split();
+    bool split();  // false when it could not split (MIN_SIZE, or MAX_WINDOWS planned)
     int windows() const { return n_; }
     // True from the next() that went back to the first window until the next next().
     bool wrapped() const { return wrapped_; }

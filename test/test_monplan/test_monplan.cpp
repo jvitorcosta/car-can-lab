@@ -310,6 +310,91 @@ void test_cycle_time_is_measured() {
     TEST_ASSERT_UINT32_WITHIN(100, 16 * Plan::DWELL_MS, p.cycleMs());
 }
 
+// Review 3: a note carries the time it happened, not the time it was read.
+void test_lost_note_has_the_time_of_the_loss() {
+    Plan p;
+    probe(p);
+    const uint16_t ids[] = {0x1A6};
+    p.setRecording(true, ids, 1, now);
+    std::vector<std::string> notes;
+    drainNotes(p, &notes);
+    p.onLinkLost(4321);
+    monplan::Note n;
+    bool found = false;
+    while (p.takeNote(&n))
+        if (strcmp(n.text, "adapter lost") == 0) found = n.ms == 4321;
+    TEST_ASSERT_TRUE(found);
+}
+
+// Review 4: BUFFER FULL racing the dwell-end '\r' still splits the window.
+void test_buffer_full_after_the_stop_still_splits() {
+    Plan p;
+    probe(p);
+    now += Plan::DWELL_MS;
+    expect(p, "\r");
+    p.onLine("BUFFER FULL", now);
+    p.onLine(">", now);
+    TEST_ASSERT_EQUAL(17, p.windows().windows());
+    expect(p, "ATCF000\r");
+}
+
+// Review 4: a filter command that landed in a running monitor (frames, no OK) is tried again.
+void test_interrupted_filter_command_is_retried() {
+    Plan p;
+    probe(p);
+    now += Plan::DWELL_MS;
+    expect(p, "\r");
+    reply(p, {});
+    expect(p, "ATCF080\r");
+    reply(p, {"1A60004", "STOPPED"});
+    TEST_ASSERT_EQUAL(State::Monitoring, p.state());
+    expect(p, "ATCF080\r");
+    reply(p, {"OK"});
+    expect(p, "ATCM780\r");
+}
+
+void test_filter_refused_again_and_again_is_cant_monitor() {
+    Plan p;
+    probe(p);
+    now += Plan::DWELL_MS;
+    expect(p, "\r");
+    reply(p, {});
+    for (int i = 0; i < Plan::FILTER_TRIES; i++) {
+        expect(p, "ATCF080\r");
+        reply(p, {"?"});
+    }
+    TEST_ASSERT_EQUAL(State::CantMonitor, p.state());
+}
+
+// Review 5: a window that overflows and can't split any more is left for the next one.
+void test_unsplittable_window_moves_on() {
+    Plan p;
+    probe(p);
+    const uint16_t ids[] = {0x100, 0x300};
+    p.setFilter(ids, 2);
+    now += Plan::DWELL_MS;
+    expect(p, "\r");
+    reply(p, {});
+    expect(p, "ATCF100\r");
+    reply(p, {"OK"});
+    expect(p, "ATCM7FF\r");
+    reply(p, {"OK"});
+    expect(p, "ATMA\r");
+    p.onLine("BUFFER FULL", now);
+    p.onLine(">", now);
+    TEST_ASSERT_EQUAL(2, p.windows().windows());
+    expect(p, "ATCF300\r");
+}
+
+// Review 7: the adapter's banner outside ATZ means it reset itself: probe again.
+void test_banner_mid_monitor_reprobes() {
+    Plan p;
+    probe(p);
+    p.onLine("ELM327 v2.2", now);
+    TEST_ASSERT_EQUAL(State::Probing, p.state());
+    expect(p, "ATZ\r");
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_happy_probe_reaches_monitoring);
@@ -326,5 +411,11 @@ int main() {
     RUN_TEST(test_monitor_refused_is_cant_monitor);
     RUN_TEST(test_probe_timeout_starts_over);
     RUN_TEST(test_cycle_time_is_measured);
+    RUN_TEST(test_lost_note_has_the_time_of_the_loss);
+    RUN_TEST(test_buffer_full_after_the_stop_still_splits);
+    RUN_TEST(test_interrupted_filter_command_is_retried);
+    RUN_TEST(test_filter_refused_again_and_again_is_cant_monitor);
+    RUN_TEST(test_unsplittable_window_moves_on);
+    RUN_TEST(test_banner_mid_monitor_reprobes);
     return UNITY_END();
 }

@@ -49,6 +49,7 @@ void Plan::note(Note::Kind k, const char* text, float v) {
     n.kind = k;
     snprintf(n.text, sizeof n.text, "%s", text);
     n.value = v;
+    n.ms = now_;
     nn_++;
 }
 
@@ -155,6 +156,17 @@ const char* Plan::nextCommand(uint32_t nowMs) {
 void Plan::onLine(const char* line, uint32_t nowMs) {
     now_ = nowMs;
     if (!line) return;
+    // The banner outside the probe: the adapter reset itself (a brown-out) and lost its settings,
+    // silent monitoring among them. Probe again before anything else.
+    if (strncmp(line, "ELM327", 6) == 0 && !(step_ == Step::Wait && pending_.tag == Tag::Probe)) {
+        note(Note::Kind::State, "adapter reset", 0);
+        step_ = Step::Idle;
+        bufferFull_ = false;
+        replanned_ = false;
+        to(State::Probing, nowMs);
+        queueProbe(0);
+        return;
+    }
     if (strcmp(line, ">") == 0) {
         if (step_ == Step::Idle) return;
         step_ = Step::Idle;
@@ -172,6 +184,12 @@ void Plan::onLine(const char* line, uint32_t nowMs) {
         } else if (strcmp(line, "?") == 0) {
             snprintf(reply_, sizeof reply_, "?");
         }
+        return;
+    }
+    if (step_ == Step::Wait && pending_.tag == Tag::Stop && has(line, "BUFFER FULL")) {
+        // the overflow raced the dwell-end '\r': still an overflow
+        if (!bufferFull_) note(Note::Kind::State, "buffer full", 0);
+        bufferFull_ = true;
         return;
     }
     if (step_ == Step::Wait) {
@@ -222,10 +240,18 @@ void Plan::answered(uint32_t nowMs) {
         }
         case Tag::WinCF:
         case Tag::WinCM:
-            if (!has(reply_, "OK")) {
-                qn_ = 0;
-                to(State::CantMonitor, nowMs);
+            if (has(reply_, "OK")) {
+                if (pending_.tag == Tag::WinCM) filterFails_ = 0;
+                break;
             }
+            // No OK: refused, or it landed in a monitor still running (a '\r' that met an idle ELM
+            // repeats ATMA; its frames, then a prompt, come back). The window again, a few times.
+            qn_ = 0;
+            if (++filterFails_ >= FILTER_TRIES) {
+                to(State::CantMonitor, nowMs);
+                break;
+            }
+            queueWindow(nowMs);
             break;
         case Tag::WinMA:
             if (has(reply_, "?")) {
@@ -237,7 +263,14 @@ void Plan::answered(uint32_t nowMs) {
         case Tag::Stop:
             if (bufferFull_) {
                 bufferFull_ = false;
-                sweep_.split();
+                if (!sweep_.split()) {  // one ID, or no room for more windows: on to the next
+                    note(Note::Kind::State, "window too busy", 0);
+                    sweep_.next();
+                    if (sweep_.wrapped()) {
+                        cycleMs_ = nowMs - cycleStart_;
+                        cycleStart_ = nowMs;
+                    }
+                }
                 queueWindow(nowMs);
             } else if (obdDue(nowMs)) {
                 lastObd_ = nowMs;
@@ -275,6 +308,7 @@ void Plan::answered(uint32_t nowMs) {
 }
 
 void Plan::onTimeout(uint32_t nowMs) {
+    now_ = nowMs;
     step_ = Step::Idle;
     switch (pending_.tag) {
         case Tag::Probe:
@@ -305,6 +339,7 @@ void Plan::onTimeout(uint32_t nowMs) {
 }
 
 void Plan::onLinkLost(uint32_t nowMs) {
+    now_ = nowMs;
     qn_ = 0;
     step_ = Step::Idle;
     bufferFull_ = false;
@@ -314,14 +349,17 @@ void Plan::onLinkLost(uint32_t nowMs) {
 }
 
 void Plan::onLinkBack(uint32_t nowMs) {
+    now_ = nowMs;
     step_ = Step::Idle;
     bufferFull_ = false;
     replanned_ = false;
+    filterFails_ = 0;
     to(State::Probing, nowMs);
     queueProbe(0);
 }
 
 void Plan::setRecording(bool on, const uint16_t* ids, int n, uint32_t nowMs) {
+    now_ = nowMs;
     recording_ = on;
     nFrozen_ = 0;
     if (on) {

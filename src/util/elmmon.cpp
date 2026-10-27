@@ -58,6 +58,11 @@ void Lines::push(const char* bytes, size_t n) {
             cur_ = 0;
             continue;
         }
+        if (c == CUT) {  // bytes were lost here: the line it's in is spliced, drop all of it
+            cur_ = 0;
+            skipping_ = true;
+            continue;
+        }
         if (skipping_) continue;
         if (c == '>' && cur_ == 0) {  // the prompt: a line of its own
             line_[0] = '>';

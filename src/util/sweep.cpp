@@ -49,10 +49,10 @@ void Plan::next() {
     wrapped_ = cur_ == 0;
 }
 
-void Plan::split() {
-    if (n_ == 0 || n_ >= MAX_WINDOWS) return;
+bool Plan::split() {
+    if (n_ == 0 || n_ >= MAX_WINDOWS) return false;
     const Window w = w_[cur_];
-    if (w.mask == ALL) return;  // one ID: MIN_SIZE
+    if (w.mask == ALL) return false;  // one ID: MIN_SIZE
     const uint16_t size = static_cast<uint16_t>((~w.mask & ALL) + 1);
     const uint16_t half = size / 2;
     const uint16_t mask = static_cast<uint16_t>(w.mask | half);
@@ -60,6 +60,7 @@ void Plan::split() {
     w_[cur_] = Window{w.filter, mask};
     w_[cur_ + 1] = Window{static_cast<uint16_t>(w.filter | half), mask};
     n_++;
+    return true;
 }
 
 void commands(const Window& w, char* cf, char* cm) {

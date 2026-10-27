@@ -62,9 +62,11 @@ void test_split_stops_at_one_id() {
     const uint16_t one[] = {0x305};
     p.only(one, 1);
     assertWindow(0x305, 0x7FF, p.current());
-    p.split();
+    TEST_ASSERT_FALSE(p.split());
     TEST_ASSERT_EQUAL(1, p.windows());
     assertWindow(0x305, 0x7FF, p.current());
+    p.scan();
+    TEST_ASSERT_TRUE(p.split());
 }
 
 void test_only_groups_neighbours() {

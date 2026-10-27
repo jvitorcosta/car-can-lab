@@ -128,3 +128,31 @@ def test_cli_report(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "MARK 2" in out
     assert "191 byte 2" in out
+
+
+def test_suspects_with_a_slow_cycle(tmp_path):
+    # Review 1: two frozen windows, a 6 s cycle; the gear byte is only heard every 6 s, so its
+    # change shows up to a cycle after the MARK, and must still be the suspect (and not noise).
+    lines = ["# car-can-lab rec 7 x adapter=a proto=6 fw=f"]
+    gear = 1
+    for k in range(10):
+        t = k * 6000
+        lines.append(f"S {t} window 191/7FF")
+        if k in (3, 6):
+            gear *= 2
+            lines.append(f"F {t + 100} 191 0B 00 {gear:02X} 00" if k else "")
+        elif k == 0:
+            lines.append(f"F {t + 100} 191 0B 00 {gear:02X} 00")
+        lines.append(f"S {t + 3000} window 158/7FF")
+        lines.append(f"F {t + 3100} 158 00 {k:02X}")
+    lines.insert(1, "M 14000 1")
+    lines.insert(2, "M 32000 2")
+    rec = _rec(tmp_path, [l for l in lines if l])
+    rec.marks.sort()
+    assert analyze.cycle_ms(rec) == 6000
+    for n, (old, new) in ((1, (1, 2)), (2, (2, 4))):
+        s = analyze.suspects(rec, n)
+        assert s, f"mark {n}: nothing"
+        assert (s[0].id, s[0].byte, s[0].old, s[0].new) == (0x191, 2, old, new)
+    assert (0x191, 2) not in analyze.noisy(rec)
+    assert (0x158, 1) in analyze.noisy(rec)

@@ -199,6 +199,10 @@ static void drawLive(uint32_t nowMs, bool full) {
         message[0] = '\0';
         sniffview::header(h, sizeof h, v.ids, v.dropped, v.msgPerSec, v.recording, v.logPct, v.cycleMs);
         if (paused) snprintf(h, sizeof h, "PAUSED  %d IDs", v.ids);
+        if (v.logFull && !v.recording) {  // sticky until the next REC: the recording stopped itself
+            snprintf(h, sizeof h, "LOG FULL: DOWNLOAD REC %d", v.recNumber);
+            alert = true;
+        }
     }
     if (strcmp(h, headerShown) != 0) {
         drawHeader(h, alert);

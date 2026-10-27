@@ -31,7 +31,15 @@ Pick pick(const Char* chars, int n) {
 bool serialService(uint16_t uuid) { return uuid == 0xFFF0 || uuid == 0xFFE0 || uuid == 0x18F0; }
 
 void Inbox::push(const uint8_t* data, size_t len) {
-    for (size_t i = 0; i < len && count_ < CAP; ++i, ++count_) buf_[(head_ + count_) % CAP] = (char)data[i];
+    if (len == 0) return;
+    if (cut_ && count_ < CAP) {  // the first bytes after a cut: marked
+        buf_[(head_ + count_) % CAP] = CUT;
+        ++count_;
+        cut_ = false;
+    }
+    size_t i = 0;
+    for (; i < len && count_ < CAP; ++i, ++count_) buf_[(head_ + count_) % CAP] = (char)data[i];
+    if (i < len) cut_ = true;
 }
 
 bool Inbox::pop(char* c) {

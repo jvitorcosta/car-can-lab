@@ -83,8 +83,27 @@ def changes(rec):
     return out
 
 
+def cycle_ms(rec):
+    """How long one round of the windows took (the median gap between a window's openings); 0 without windows."""
+    last, gaps = {}, []
+    for ms, f, m in rec.windows:
+        if (f, m) in last:
+            gaps.append(ms - last[(f, m)])
+        last[(f, m)] = ms
+    if not gaps:
+        return 0
+    gaps.sort()
+    return gaps[len(gaps) // 2]
+
+
+def _slack(rec, ms):
+    """A time window widened to one and a half cycles: an ID is only heard when its window comes round."""
+    return max(ms, cycle_ms(rec) * 3 // 2)
+
+
 def noisy(rec, quiet_ms=2000):
-    """(id, byte) pairs that changed at least twice with no MARK within quiet_ms."""
+    """(id, byte) pairs that changed at least twice with no MARK within quiet_ms (or 1.5 cycles)."""
+    quiet_ms = _slack(rec, quiet_ms)
     marks = sorted(ms for ms, _ in rec.marks)
     count = {}
     for ms, cid, i, _, _ in changes(rec):
@@ -100,12 +119,18 @@ def suspects(rec, mark_n, after_ms=1500, before_ms=2000):
     if not times:
         return []
     t = times[0]
+    # The window after the mark: at least 1.5 cycles (an ID is logged only when its window comes
+    # round), but never past the next mark.
+    after_ms = _slack(rec, after_ms)
+    later = [ms for ms, _ in rec.marks if ms > t]
+    end = min([t + after_ms] + [ms - 1 for ms in later])
+    after_ms = max(1, end - t)
     noise = noisy(rec)
     ch = changes(rec)
     before = {(cid, i) for ms, cid, i, _, _ in ch if t - before_ms <= ms < t}
     after = {}
     for ms, cid, i, a, b in ch:
-        if t <= ms <= t + after_ms:
+        if t <= ms <= end:
             after.setdefault((cid, i), []).append((ms, a, b))
     out = []
     for key, evs in after.items():

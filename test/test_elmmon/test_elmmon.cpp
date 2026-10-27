@@ -115,6 +115,17 @@ void test_lines_small_out_buffer() {
     TEST_ASSERT_EQUAL_STRING("1A6 ", out);
 }
 
+// Review: a cut in the BLE inbox (obdble::Inbox::CUT) drops the spliced line, not just the cut.
+void test_lines_cut_mark_drops_the_spliced_line() {
+    elmmon::Lines l;
+    char out[elmmon::Lines::CAP];
+    l.push("1A6 00 0", 8);
+    l.push("\x18" "4 05\r191 0B\r", 13);
+    TEST_ASSERT_TRUE(l.next(out, sizeof out));
+    TEST_ASSERT_EQUAL_STRING("191 0B", out);
+    TEST_ASSERT_FALSE(l.next(out, sizeof out));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_frame_with_spaces);
@@ -128,5 +139,6 @@ int main() {
     RUN_TEST(test_lines_prompt_after_text_and_newlines);
     RUN_TEST(test_lines_overlong_cut);
     RUN_TEST(test_lines_small_out_buffer);
+    RUN_TEST(test_lines_cut_mark_drops_the_spliced_line);
     return UNITY_END();
 }

@@ -90,6 +90,28 @@ void test_inbox_drops_what_does_not_fit_and_clears() {
     TEST_ASSERT_EQUAL_CHAR('z', c);
 }
 
+// car-can-lab: a cut push leaves a CUT mark before the next bytes, so a line spliced from the head of
+// one and the tail of a later one is never taken for a frame.
+void test_inbox_marks_a_cut() {
+    obdble::Inbox in;
+    uint8_t big[obdble::Inbox::CAP + 5];
+    memset(big, 'A', sizeof big);
+    in.push(big, sizeof big);
+    char c;
+    for (size_t i = 0; i < obdble::Inbox::CAP; i++) TEST_ASSERT_TRUE(in.pop(&c));
+    in.push((const uint8_t*)"1A6\r", 4);
+    TEST_ASSERT_TRUE(in.pop(&c));
+    TEST_ASSERT_EQUAL_CHAR(obdble::Inbox::CUT, c);
+    TEST_ASSERT_TRUE(in.pop(&c));
+    TEST_ASSERT_EQUAL_CHAR('1', c);
+    in.push((const uint8_t*)"x", 1);  // no cut since: no mark
+    TEST_ASSERT_TRUE(in.pop(&c));
+    TEST_ASSERT_TRUE(in.pop(&c));
+    TEST_ASSERT_TRUE(in.pop(&c));
+    TEST_ASSERT_TRUE(in.pop(&c));
+    TEST_ASSERT_EQUAL_CHAR('x', c);
+}
+
 // Some adapters advertise no name, only their serial service: recognise them by it.
 void test_serial_services_are_recognised() {
     TEST_ASSERT_TRUE(obdble::serialService(0xFFF0));
@@ -109,6 +131,7 @@ int main(int, char**) {
     RUN_TEST(test_nothing_usable);
     RUN_TEST(test_inbox_keeps_order_across_chunks);
     RUN_TEST(test_inbox_drops_what_does_not_fit_and_clears);
+    RUN_TEST(test_inbox_marks_a_cut);
     RUN_TEST(test_serial_services_are_recognised);
     return UNITY_END();
 }

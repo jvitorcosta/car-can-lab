@@ -65,13 +65,11 @@ static void flushLocked() {
         used = 0;
         return;
     }
-    if (!makeRoomLocked()) {
+    // Out of room with only the open recording left: these lines still go in (the reserve holds
+    // them), and full() tells the monitor to write its last lines and close.
+    if (!wasFull && !makeRoomLocked()) {
         Serial.println("[store] LOG FULL");
-        file.close();
-        current = -1;
-        used = 0;
         wasFull = true;
-        return;
     }
     file.write(reinterpret_cast<const uint8_t*>(buf), used);
     file.flush();

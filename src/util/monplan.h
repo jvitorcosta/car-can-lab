@@ -22,12 +22,14 @@ struct Note {
     Kind kind;
     char text[32];
     float value;
+    uint32_t ms;  // when it happened
 };
 
 class Plan {
 public:
     static constexpr uint32_t DWELL_MS = 1500, FROZEN_DWELL_MS = 300, OBD_EVERY_MS = 3000;
     static constexpr uint32_t ENGINE_RETRY_MS = 5000;
+    static constexpr int FILTER_TRIES = 3;  // an ATCF / ATCM without OK this often in a row: CantMonitor
     static constexpr uint32_t REPLY_MS = 2000, SLOW_REPLY_MS = 8000;  // SLOW: ATZ, 0100 (SEARCHING...)
     Plan();
     // The command to send now, or nullptr (wait: for a reply, the dwell, a retry, the link).
@@ -77,7 +79,7 @@ private:
     Cmd pending_ = {};
     Step step_ = Step::Idle;
     uint32_t sentAt_ = 0, dwellEnd_ = 0, retryAt_ = 0, lastObd_ = 0;
-    int probeIdx_ = 0;
+    int probeIdx_ = 0, filterFails_ = 0;
     char reply_[160] = {};
     bool bufferFull_ = false, replanned_ = false, recording_ = false, lost_ = false;
     uint16_t filter_[96] = {}, frozen_[96] = {};

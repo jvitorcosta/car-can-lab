@@ -41,6 +41,35 @@ static void stopRec(uint32_t nowMs) {
     Serial.printf("[mon] recording %d stopped\n", recNumber);
 }
 
+// Under the lock, every pass, adapter or not: the plan's notes into the recording at the time they
+// happened, the held values and the flush, and the end of a recording the flash can't take more of.
+static void keepRecording(uint32_t nowMs) {
+    monplan::Note n;
+    while (plan.takeNote(&n)) {
+        if (!recording) continue;
+        const uint32_t at = static_cast<int32_t>(n.ms - recStart) < 0 ? 0 : n.ms - recStart;  // never before REC
+        if (n.kind == monplan::Note::Kind::Obd) rec.obd(n.text, n.value, at);
+        else rec.state(n.text, at);
+    }
+    if (plan.state() != shown) {
+        shown = plan.state();
+        if (shown == monplan::State::Monitoring) monitoringSince = nowMs;
+        Serial.printf("[mon] state %d\n", static_cast<int>(shown));
+    }
+    if (!recording) return;
+    rec.tick(recMs(nowMs));
+    store::tick(nowMs);
+    if (store::full()) {  // the reserve takes these last lines, then it closes
+        rec.state("log full", recMs(nowMs));
+        stopRec(nowMs);
+        logFull = true;
+        Serial.println("[mon] LOG FULL");
+    } else if (!store::isOpen()) {  // the file went away under it
+        recording = false;
+        plan.setRecording(false, nullptr, 0, nowMs);
+    }
+}
+
 void begin() {
     if (!mux) mux = xSemaphoreCreateMutex();
 }
@@ -60,6 +89,10 @@ void tick(uint32_t nowMs, bool scanFree) {
             }
         }
         if (!link::connected()) {
+            {
+                Lock l;
+                keepRecording(millis());  // "adapter lost" at its time, and the flushes go on
+            }
             vTaskDelay(pdMS_TO_TICKS(20));
             return;
         }
@@ -80,27 +113,7 @@ void tick(uint32_t nowMs, bool scanFree) {
     }
     const uint32_t now = millis();
     if (const char* c = plan.nextCommand(now)) link::send(c);
-    monplan::Note n;
-    while (plan.takeNote(&n)) {
-        if (!recording) continue;
-        if (n.kind == monplan::Note::Kind::Obd) rec.obd(n.text, n.value, recMs(now));
-        else rec.state(n.text, recMs(now));
-    }
-    if (plan.state() != shown) {
-        shown = plan.state();
-        if (shown == monplan::State::Monitoring) monitoringSince = now;
-        Serial.printf("[mon] state %d\n", static_cast<int>(shown));
-    }
-    if (recording) {
-        rec.tick(recMs(now));
-        store::tick(now);
-        if (!store::isOpen()) {  // the store closed it: the flash is full
-            logFull = store::full();
-            recording = false;
-            plan.setRecording(false, nullptr, 0, now);
-            Serial.println("[mon] LOG FULL");
-        }
-    }
+    keepRecording(now);
     if (now - secStart >= 1000) {
         msgPerSec = static_cast<int>(secFrames * 1000 / (now - secStart));
         secStart = now;

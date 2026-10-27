@@ -20,10 +20,12 @@ Kind parse(const char* line, Frame* out);
 
 // Bytes in, whole lines out: splits on '\r' and '\n', drops empty lines, yields '>' as a line of
 // its own (the ELM sends it with no newline after). A line longer than CAP - 1 is cut there and
-// the rest of it, up to its newline, discarded.
+// the rest of it, up to its newline, discarded. CUT (obdble::Inbox's mark for lost bytes) drops
+// the line it falls in, both sides of it.
 class Lines {
 public:
     static constexpr size_t CAP = 96;
+    static constexpr char CUT = '\x18';
     void push(const char* bytes, size_t n);
     // The oldest complete line into out (cut to outCap - 1); false when none is complete.
     bool next(char* out, size_t outCap);

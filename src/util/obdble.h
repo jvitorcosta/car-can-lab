@@ -20,14 +20,18 @@ bool serialService(uint16_t uuid);
 
 // Bytes from the adapter's notifications, in order, read one by one up to the '>' prompt. A push
 // that doesn't fit is cut (a runaway reply, never a normal one). Not thread-safe: the link guards it.
+// car-can-lab: monitoring streams ~5 KB/s, so the inbox is 2 KB, and after a cut the next push
+// starts with CUT, so the reader (elmmon::Lines) drops the line spliced across the cut.
 class Inbox {
 public:
-    static constexpr size_t CAP = 512;
+    static constexpr size_t CAP = 2048;
+    static constexpr char CUT = '\x18';
     void push(const uint8_t* data, size_t len);
     bool pop(char* c);
-    void clear() { head_ = count_ = 0; }
+    void clear() { head_ = count_ = 0; cut_ = false; }
 private:
     char buf_[CAP];
     size_t head_ = 0, count_ = 0;
+    bool cut_ = false;
 };
 }

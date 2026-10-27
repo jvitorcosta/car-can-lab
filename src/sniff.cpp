@@ -6,6 +6,8 @@
 //   pio run -e ledpanel_ota -t upload       (in spotify-pokemon-deck: the lights come back)
 // It reads the panel's touch calibration (NVS "touch"/"hom") and never writes it: with none
 // stored, the screen says so and the Xbox controller still drives everything.
+// Test hooks: -D STORE_TEST writes a recording of 1,000 made-up lines at boot (the download
+// check); -D NIGHT_TEST forces night mode.
 #include <Arduino.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"            // NimBLE 2's and the Xbox library's headers;
@@ -22,43 +24,17 @@
 #include "net/remote_config.h"
 #include "net/wifi.h"
 #include "sniff/monitor.h"
+#include "sniff/screen.h"
 #include "sniff/store.h"
 #include "sniff/web.h"
 #include "ui/backlight.h"
-#include "ui/termfont.h"
+#include "util/daynight.h"
 #include "util/otapage.h"
-#include "util/termpal.h"
 #include "util/version.h"
 
 static TFT_eSPI tft;
 static constexpr const char* MDNS_NAME = "cardeck-sniff";
-static bool night = false;
 
-using termfont::Face;
-
-static uint16_t c565(uint32_t rgb) { return tft.color565(rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF); }
-static uint16_t pal(termpal::Role r) { return c565(termpal::rgb(r, night)); }
-
-// VT323 text; `datum` as TFT_eSPI's nine, its vertical part by the capitals (as the LED panel's).
-static int text(const char* s, int x, int y, Face f, uint8_t datum) {
-    static int shown = -1;
-    if (static_cast<int>(f) != shown) {
-        shown = static_cast<int>(f);
-        tft.setFreeFont(reinterpret_cast<const GFXfont*>(&termfont::font(f)));
-    }
-    const int cap = termfont::capHeight(f), v = datum / 3;
-    const int base = v == 0 ? y + cap : v == 1 ? y + cap / 2 : y;
-    tft.setTextDatum(L_BASELINE + datum % 3);
-    return tft.drawString(s, x, base);
-}
-
-static void clearBg(int x, int y, int w, int h) {
-    tft.fillRect(x, y, w, h, pal(termpal::BG));
-    const uint16_t line = c565(termpal::scan(night));
-    for (int row = y + (3 - y % 3) % 3; row < y + h; row += 3) tft.drawFastHLine(x, row, w, line);
-}
-
-static bool calibrated = false;
 static bool loadCalibration() {
     Preferences p;
     if (!p.begin("touch", true)) return false;  // read-only: the namespace is the LED panel's
@@ -69,18 +45,19 @@ static bool loadCalibration() {
     return ok;
 }
 
-static void drawBoot() {
-    clearBg(0, 0, tft.width(), tft.height());
-    tft.setTextColor(pal(termpal::TEXT));
-    text("CAR-CAN-LAB // SNIFF", 8, 8, Face::TITLE, TL_DATUM);
-    tft.setTextColor(pal(termpal::MID));
-    text("LIGHTS: FLASH LEDPANEL BACK", 8, 40, Face::BODY, TL_DATUM);
-    if (!calibrated) {
-        tft.setTextColor(pal(termpal::ALERT));
-        text("TOUCH NOT CALIBRATED: USE THE XBOX PAD", 8, 64, Face::SMALL, TL_DATUM);
-    }
-    tft.setTextColor(pal(termpal::DIM));
-    text(FW_LABEL, 8, 220, Face::SMALL, TL_DATUM);
+// TFT_eSPI's ILI9341_2_DRIVER init leaves a flat gamma that washes this panel out; the standard
+// ILI9341 tables, as the LED panel sets them.
+static void vividGamma() {
+    static const uint8_t POS[15] = {0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1,
+                                    0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00};
+    static const uint8_t NEG[15] = {0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1,
+                                    0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F};
+    tft.writecommand(0x26);
+    tft.writedata(0x01);
+    tft.writecommand(0xE0);
+    for (uint8_t v : POS) tft.writedata(v);
+    tft.writecommand(0xE1);
+    for (uint8_t v : NEG) tft.writedata(v);
 }
 
 static void netTask(void*) {
@@ -89,13 +66,13 @@ static void netTask(void*) {
         net::loop();
         vTaskDelay(pdMS_TO_TICKS(500));
     }
-    netclock::begin();
+    netclock::begin();  // SNTP: night mode and the recordings' date
     ota::begin(MDNS_NAME);
     sniff::web::begin();
-    Serial.printf("[net] on: %s\n", net::deviceIp().c_str());
+    Serial.printf("[net] on: http://%s/recs?k=<REMOTE_TOKEN>\n", net::deviceIp().c_str());
     for (;;) {
         if (!ota::active()) sniff::web::loop();
-        net::loop();
+        net::loop();  // rejoins after a drop
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -135,25 +112,93 @@ static void bleTask(void*) {
     }
 }
 
-// The update page: the title and a 10-cell bar, as the LED panel's.
+// This pass's inputs: a new touch press, the controller's button presses (edges) and the D-pad
+// (held: repeats after 400 ms, every 150 ms; the sticks are ignored, as on the LED panel).
+static sniff::screen::Input readInput() {
+    sniff::screen::Input in{};
+    static bool wasDown = false;
+    static uint32_t loopStart = 0;
+    if (loopStart == 0) loopStart = millis() | 1;
+    int x = 0, y = 0;
+    // the panel reports a phantom press at power-up: the first second is ignored
+    const bool down = touch::read(&x, &y) && millis() - loopStart > 1000;
+    if (down && !wasDown) {
+        in.tap = true;
+        in.x = x;
+        in.y = y;
+    }
+    wasDown = down;
+
+    in.pad = xbox.isConnected() && !xbox.isWaitingForFirstNotification();
+    static bool padWas = false;
+    if (in.pad != padWas) Serial.printf("[pad] %s\n", in.pad ? "connected" : "gone");
+    padWas = in.pad;
+    if (!in.pad) return in;
+    const XboxControllerNotificationParser& n = xbox.xboxNotif;
+    static bool pA = false, pB = false, pX = false, pY = false, pLB = false, pRB = false;
+    auto edge = [](bool now, bool& prev) {
+        const bool d = now && !prev;
+        prev = now;
+        return d;
+    };
+    in.a = edge(n.btnA, pA);
+    in.b = edge(n.btnB, pB);
+    in.bx = edge(n.btnX, pX);
+    in.by = edge(n.btnY, pY);
+    in.lb = edge(n.btnLB, pLB);
+    in.rb = edge(n.btnRB, pRB);
+    const int dx = (n.btnDirRight ? 1 : 0) - (n.btnDirLeft ? 1 : 0);
+    const int dy = dx ? 0 : (n.btnDirDown ? 1 : 0) - (n.btnDirUp ? 1 : 0);
+    static int lastDx = 0, lastDy = 0;
+    static uint32_t repeatAt = 0;
+    bool fire = false;
+    if (dx || dy) {
+        if (dx != lastDx || dy != lastDy) {
+            fire = true;
+            repeatAt = millis() + 400;
+        } else if (static_cast<int32_t>(millis() - repeatAt) >= 0) {
+            fire = true;
+            repeatAt = millis() + 150;
+        }
+    }
+    lastDx = dx;
+    lastDy = dy;
+    if (fire) {
+        in.left = dx < 0;
+        in.right = dx > 0;
+        in.up = dy < 0;
+        in.down = dy > 0;
+    }
+    return in;
+}
+
+// Night mode (18:00-06:00 local, util/daynight), checked once a second; the backlight drops
+// before the repaint.
+static void updateDayNight() {
+    static uint32_t checkedAt = 0;
+    static bool night = false;
+    if (millis() - checkedAt < 1000) return;
+    checkedAt = millis();
+    int m = 0, y = 0, month = 0, day = 0;
+    bool want = netclock::localNow(&m, &y, &month, &day) && daynight::isNight(m);
+#ifdef NIGHT_TEST
+    want = true;
+#endif
+    if (want == night) return;
+    night = want;
+    backlight::set(night);
+    Serial.printf("[ui] night mode %s\n", night ? "on" : "off");
+    sniff::screen::setNight(night);
+}
+
+// The update page holds the screen while an update arrives; true meanwhile.
 static bool updateTick() {
     static otapage::Shown shown;
     const ota::View v = ota::view();
     switch (otapage::step(shown, v.phase, v.pct)) {
         case otapage::Draw::Page:
-        case otapage::Draw::Bar: {
-            clearBg(0, 0, tft.width(), tft.height());
-            tft.setTextColor(pal(otapage::alert(v.phase) ? termpal::ALERT : termpal::TEXT));
-            text(otapage::title(v.phase), tft.width() / 2, 80, Face::BIG, TC_DATUM);
-            const int full = otapage::cells(v.pct);
-            for (int k = 0; k < otapage::CELLS; k++) {
-                const int x = 40 + k * 24;
-                if (k < full) tft.fillRect(x, 150, 20, 16, pal(termpal::TEXT));
-                else tft.drawRect(x, 150, 20, 16, pal(termpal::MID));
-            }
-            break;
-        }
-        case otapage::Draw::Back: drawBoot(); break;
+        case otapage::Draw::Bar: sniff::screen::updatePage(v.phase, v.pct); break;
+        case otapage::Draw::Back: sniff::screen::redraw(); break;
         case otapage::Draw::None: break;
     }
     return otapage::holds(v.phase);
@@ -167,13 +212,14 @@ void setup() {
     backlight::begin();
     tft.invertDisplay(true);  // CYD panel: colours are inverted without this
     tft.setRotation(1);
-    tft.setAttribute(UTF8_SWITCH, 0);
+    tft.setAttribute(UTF8_SWITCH, 0);  // the texts are Latin-1 bytes, as on the LED panel
+    vividGamma();
     touch::begin();
-    calibrated = loadCalibration();
-    drawBoot();
+    const bool calibrated = loadCalibration();
+    sniff::screen::begin(&tft, calibrated);
+    sniff::screen::boot();
     sniff::store::begin();
 #ifdef STORE_TEST
-    // Test hook (-D STORE_TEST): a recording of 1,000 made-up F lines, to check the download.
     int n = 0;
     if (sniff::store::open(&n)) {
         char line[40];
@@ -184,6 +230,7 @@ void setup() {
         sniff::store::close();
     }
 #endif
+    sniff::screen::redraw();
     // NimBLE 2 (the Xbox library inits it): bonding on for the controller, +9 dBm. Its bonds live in
     // NVS "nimble_bond", shared with the LED panel (the same controller, the same bond).
     xbox.begin();
@@ -195,6 +242,8 @@ void setup() {
 }
 
 void loop() {
+    // Up bootguard::HEALTHY_MS, online and the update listener started: this firmware has proven
+    // itself (net/ota) and can take the next update (the LED panel, after the session).
     static uint32_t provenAt = 0;
     if (millis() - provenAt >= 1000) {
         provenAt = millis();
@@ -204,6 +253,8 @@ void loop() {
         delay(10);
         return;
     }
+    updateDayNight();
+    sniff::screen::loop(millis(), readInput());
     static uint32_t memAt = 0;
     if (millis() - memAt > 60000) {
         memAt = millis();

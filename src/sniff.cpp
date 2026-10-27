@@ -7,6 +7,12 @@
 // It reads the panel's touch calibration (NVS "touch"/"hom") and never writes it: with none
 // stored, the screen says so and the Xbox controller still drives everything.
 #include <Arduino.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"            // NimBLE 2's and the Xbox library's headers;
+#pragma GCC diagnostic ignored "-Wdouble-promotion"  // src/ builds with -Werror
+#include <NimBLEDevice.h>
+#include <XboxPad.hpp>  // lib/xboxpad: asukiaaa's Xbox library, vendored with shorter timeouts
+#pragma GCC diagnostic pop
 #include <Preferences.h>
 #include <TFT_eSPI.h>
 #include "pins.h"
@@ -15,6 +21,7 @@
 #include "net/ota.h"
 #include "net/remote_config.h"
 #include "net/wifi.h"
+#include "sniff/monitor.h"
 #include "sniff/store.h"
 #include "sniff/web.h"
 #include "ui/backlight.h"
@@ -93,6 +100,41 @@ static void netTask(void*) {
     }
 }
 
+// The Xbox controller (Series X|S / One 1708+, over BLE): the first one found in pairing mode, or
+// the bonded one (the LED panel's bond, NimBLE's own NVS) when it's switched on.
+static XboxSeriesXControllerESP32_asukiaaa::Core xbox;
+static TaskHandle_t bleHandle = nullptr;
+
+// All Bluetooth on core 0, so the screen (core 1) never waits on it: the controller (as the LED
+// panel runs it: every tick while connected or mid-pairing, else one 4 s scan every 15 s) and the
+// adapter (sniff/monitor: its scans only while the controller's scanner is free). An update over
+// WiFi (net/ota) has the radio: no scans until it ends.
+static constexpr uint32_t PAD_SCAN_EVERY_MS = 15000;
+static void bleTask(void*) {
+    uint32_t lastPadScan = 0;
+    for (;;) {
+        if (ota::active()) {
+            NimBLEScan* scan = NimBLEDevice::getScan();
+            if (scan->isScanning()) scan->stop();
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+        const uint32_t now = millis();
+        const bool padBusy = xbox.isConnected() || XboxSeriesXControllerESP32_asukiaaa::advDevice != nullptr ||
+                             NimBLEDevice::getScan()->isScanning();
+        if (padBusy) {
+            xbox.onLoop();
+        } else if (now - lastPadScan > PAD_SCAN_EVERY_MS) {
+            lastPadScan = now;
+            xbox.onLoop();  // starts a scan
+        }
+        const bool scanFree = XboxSeriesXControllerESP32_asukiaaa::advDevice == nullptr &&
+                              !NimBLEDevice::getScan()->isScanning();
+        sniff::monitor::tick(millis(), scanFree);
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+}
+
 // The update page: the title and a 10-cell bar, as the LED panel's.
 static bool updateTick() {
     static otapage::Shown shown;
@@ -142,6 +184,12 @@ void setup() {
         sniff::store::close();
     }
 #endif
+    // NimBLE 2 (the Xbox library inits it): bonding on for the controller, +9 dBm. Its bonds live in
+    // NVS "nimble_bond", shared with the LED panel (the same controller, the same bond).
+    xbox.begin();
+    sniff::monitor::begin();
+    // 8 KB: the Xbox library's and the adapter's connect and discovery (std::function, std::vector)
+    xTaskCreatePinnedToCore(bleTask, "ble", 8192, nullptr, 1, &bleHandle, 0);
     if (REMOTE_TOKEN[0]) xTaskCreatePinnedToCore(netTask, "net", 6144, nullptr, 0, nullptr, 1);
     else Serial.println("[net] off (REMOTE_TOKEN empty)");
 }
@@ -159,8 +207,10 @@ void loop() {
     static uint32_t memAt = 0;
     if (millis() - memAt > 60000) {
         memAt = millis();
-        Serial.printf("[mem] heap %u (min %u)\n", static_cast<unsigned>(ESP.getFreeHeap()),
-                      static_cast<unsigned>(ESP.getMinFreeHeap()));
+        Serial.printf("[mem] heap %u (min %u)  stack left: ble %u, ota %u, loop %u\n",
+                      static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()),
+                      bleHandle ? static_cast<unsigned>(uxTaskGetStackHighWaterMark(bleHandle)) : 0u, ota::stackLeft(),
+                      static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     }
     delay(10);
 }

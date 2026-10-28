@@ -1,22 +1,36 @@
 # car-can-lab
 
-An ESP32 + ELM327-over-BLE toolkit for reverse engineering a car's CAN bus, built as a hobby and
-learning project. Its first hardware target is the **yellow deck**, an ESP32-2432S028R "Cheap
-Yellow Display" that normally runs a car LED panel (the
-[car-cyberdeck](https://github.com/jvitorcosta/car-cyberdeck) project). Its first
-car is a **Honda City**, whose standard OBD-II PIDs leave out two things worth having: the
-**gear** (P R N D S and the paddles) and the **fuel level** (no PID 2F). Both travel on the car's
-CAN bus as broadcast messages that nobody has documented for this car. This repo is the tool for
-finding them.
+A listen-only toolkit for reverse engineering a car's CAN bus with an ESP32 and a Bluetooth
+ELM327 adapter. Standard OBD-II PIDs leave out a lot of what a car knows; much of the rest travels
+on the CAN bus as broadcast messages that nobody has documented for your model. This repo helps
+you find them: record the bus while you do something in the car (shift gear, fill the tank), mark
+the moment, and let the PC tools point at the bytes that changed with it.
+
+It runs on an ESP32-2432S028R "Cheap Yellow Display" (the yellow deck of
+[car-cyberdeck](https://github.com/jvitorcosta/car-cyberdeck)) and never sends anything on the car's bus
+(see [Listen only](#listen-only)). It was built on a **Honda City**, hunting the two things its
+OBD-II PIDs leave out: the **gear** (P R N D S and the paddles) and the **fuel level** (no PID 2F).
+Nothing else in it is specific to that car; see [Using it on another car](#using-it-on-another-car).
 
 - `src/`: the **sniff firmware**. It watches the bus through the adapter in silent monitor mode,
   shows it live (one row per CAN ID, changed bytes lit and fading), and records what changed, with
-  the owner's MARKs and a few known OBD values, into the deck's flash.
+  your MARKs and a few known OBD values, into the deck's flash.
 - `tools/sniff/`: the **PC tools**. They read a recording, convert an ICSim `candump` log, and list
   the suspects per MARK and the bytes that track RPM.
 - `dbc/`: the signals found, as a DBC file grown session by session.
 - `docs/`: the design (`docs/superpowers/specs/`), the build plan, the session guide
   (`docs/sessions.md`) and what's waiting on a check on the deck (`docs/BACKLOG.md`).
+
+## Using it on another car
+
+- **Background OBD values.** Between monitoring windows the firmware reads RPM (`010C`) and
+  coolant. The City has no standard coolant PID (`05`), so it reads the extended one (`0167`); on
+  most other cars `0105` is the one to use. The choice is in `src/util/monplan.h`; both PIDs are
+  already in the firmware's table, and the listen-only gate allows any single mode 01 read.
+- **Signals.** `dbc/` is where confirmed signals go, one DBC file per car. It is still empty:
+  none of the City's are confirmed yet.
+- **Adapter.** Your ELM327 must answer `ATCSM1` (silent monitoring) with `OK`; the firmware
+  refuses to monitor otherwise.
 
 ## Hardware
 

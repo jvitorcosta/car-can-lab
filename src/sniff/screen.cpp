@@ -7,6 +7,8 @@
 #include "../util/idtable.h"
 #include "../util/otapage.h"
 #include "../util/sniffview.h"
+#include "../util/tapguard.h"
+#include "../util/tapsettle.h"
 #include "../util/termpal.h"
 #include "../util/version.h"
 #include "monitor.h"
@@ -331,7 +333,7 @@ static void drawHome(uint32_t nowMs) {
     text("LIGHTS: FLASH LEDPANEL BACK", ROW_X, 170, Face::SMALL, TL_DATUM);
     if (!calibrated) {
         tft->setTextColor(pal(termpal::ALERT));
-        text("TOUCH NOT CALIBRATED: USE THE XBOX PAD", ROW_X, 194, Face::SMALL, TL_DATUM);
+        text("TOUCH UNCALIBRATED: HOLD BOOT 2 S", ROW_X, 194, Face::SMALL, TL_DATUM);
     }
     tft->setTextColor(pal(termpal::DIM));
     text(FW_LABEL, ROW_X, 218, Face::SMALL, TL_DATUM);
@@ -380,7 +382,7 @@ void boot() {
     }
     if (!calibrated) {
         tft->setTextColor(pal(termpal::ALERT));
-        text("TOUCH NOT CALIBRATED: USE THE XBOX PAD", ROW_X, 100, Face::SMALL, TL_DATUM);
+        text("TOUCH UNCALIBRATED: HOLD BOOT 2 S", ROW_X, 100, Face::SMALL, TL_DATUM);
     }
     tft->setTextColor(pal(termpal::DIM));
     text(FW_LABEL, ROW_X, 218, Face::SMALL, TL_DATUM);
@@ -388,12 +390,20 @@ void boot() {
     page = Page::Live;
 }
 
+// Touch: one tap per press where the finger settled (util/tapsettle); a page drawn anew waits for
+// the finger to lift first (util/tapguard), so the tap that opened it can't press what lies under it.
+static tapguard::Guard tapGuard;
+static tapsettle::Settle tapSettle;
+
 void redraw() {
+    tapGuard.arm();
     const uint32_t now = millis();
     if (page == Page::Live) drawLive(now, true);
     else if (page == Page::Home) drawHome(now);
     else drawLogs();
 }
+
+void setCalibrated(bool cal) { calibrated = cal; }
 
 void setNight(bool n) {
     if (n == night) return;
@@ -401,8 +411,10 @@ void setNight(bool n) {
     redraw();
 }
 
-void loop(uint32_t nowMs, const Input& in) {
+void loop(uint32_t nowMs, const Input& raw) {
     static uint32_t refreshAt = 0, homeAt = 0;
+    Input in = raw;
+    in.tap = tapSettle.update(tapGuard.update(raw.touchDown, nowMs), raw.x, raw.y, nowMs, &in.x, &in.y);
     switch (page) {
         case Page::Live:
             inputLive(in, nowMs);

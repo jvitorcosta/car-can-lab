@@ -72,6 +72,8 @@ void test_the_widest_texts_fit_the_screen() {
     sniffview::header(h, sizeof h, 96, 9999, 9999, true, 100, 99000);
     TEST_ASSERT_LESS_OR_EQUAL(312, termfont::width(termfont::Face::SMALL, h));
     TEST_ASSERT_LESS_OR_EQUAL(312, termfont::width(termfont::Face::SMALL, "ADAPTER CAN'T MONITOR (NOT SILENT)"));
+    TEST_ASSERT_LESS_OR_EQUAL(312, termfont::width(termfont::Face::SMALL, "TOUCH UNCALIBRATED: HOLD BOOT 2 S"));
+    TEST_ASSERT_LESS_OR_EQUAL(312, termfont::width(termfont::Face::SMALL, "LOG FULL: DOWNLOAD REC 999"));
     TEST_ASSERT_LESS_OR_EQUAL(312, termfont::width(termfont::Face::BODY, "7FF* FF FF FF FF FF FF FF FF"));
 }
 

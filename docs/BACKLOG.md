@@ -15,8 +15,12 @@ Nothing here has been flashed to the deck yet: the owner flashes and checks each
 - [ ] Task 8: with the clone's BLE side ("OBDBLE"), Serial shows `[link] adapter connected`, the
   probe, and either `[mon] state 6` (Monitoring) or a named refusal state (3 NotSilent, 4
   CantMonitor, 2 NotCan, 5 EngineOff). With the Vgate when it arrives: in the car, engine on,
-  frames come in. The Xbox controller must stay connected throughout.
+  frames come in. A connected Xbox controller must stay connected throughout.
 - [ ] Task 9: with the adapter, rows appear, a changing byte lights and fades, PAUSE freezes,
-  FILTER narrows to the tapped rows, MARK and REC show in the header; the Xbox controller drives
-  it all (D-pad rows, A pick, X MARK, Y REC, LB FILTER, RB PAUSE, B back); after 18:00 it turns
-  orange. Check the rows' 19 px pitch reads well on the deck.
+  FILTER narrows to the tapped rows, MARK and REC show in the header; after 18:00 it turns
+  orange. Check the rows' 19 px pitch reads well on the deck. Do it twice:
+  - **touch only** (controller off): tap rows to pick, every button, HOME's LIVE / LOGS, LOGS'
+    BACK; a tap never lands on the page it just opened; with BOOT held 2 s the five crosses
+    calibrate and the taps still hit afterwards;
+  - **Xbox only** (no touching): D-pad rows, A pick, X MARK, Y REC, LB FILTER, RB PAUSE, B back,
+    D-pad left / right + A on HOME.

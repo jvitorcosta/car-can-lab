@@ -23,8 +23,9 @@ finding them.
 - The yellow deck: ESP32-2432S028R (ESP32, 4 MB flash, 2.8" ILI9341 320 x 240, XPT2046 touch).
 - An ELM327 BLE adapter. The tool is built for and accepted against the **Vgate iCar Pro BLE 4.0**.
   A cheap clone's BLE side works for a smoke test of the link only.
-- An Xbox Series X|S / One (1708+) controller over BLE. It drives the whole interface and always
-  stays connected.
+- Touch or an Xbox Series X|S / One (1708+) controller over BLE: either one drives every screen
+  on its own, and both work at once. Tap a row to pick it and a button to press it. Hold BOOT for
+  2 s to calibrate the touch.
 
 ## Listen only
 
@@ -70,8 +71,9 @@ without USB, and the panel must come back exactly as it was. So, on the yellow d
 
 - car-can-lab keeps the same **`min_spiffs.csv`** partition table (two 1.9 MB app slots and a
   ~128 KB data partition, where the recordings live);
-- it **never writes the LED panel's NVS** (its looks, trip and touch calibration). It only reads
-  the shared touch calibration (`touch`/`hom`). The update code's own boot guard and the Xbox
+- it **never writes the LED panel's NVS** (its looks, trip and touch calibration). It reads the
+  panel's touch calibration (`touch`/`hom`) when it has none of its own, and keeps its own in
+  `sniff`/`hom`. The update code's own boot guard and the Xbox
   controller's bond are shared as the copied code already shares them;
 - `src/config.h` uses the same `OTA_PASSWORD` as the panel.
 

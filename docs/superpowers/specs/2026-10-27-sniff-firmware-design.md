@@ -76,7 +76,9 @@ After each session: fetch the log over the hotspot, run the script, and confirm 
 - Parked only for now.
 - Hunt gear and fuel level first; doors, lights etc. are extras.
 - The Xbox controller stays connected no matter what: it controls the deck's interface,
-  including SNIFF.
+  including SNIFF. Touch works just as well (owner, 2026-10-28): every screen and action is
+  reachable by touch alone or by the controller alone, neither is required. Sniff can calibrate
+  the touch itself (BOOT held 2 s), saving into its own NVS namespace, never the panel's.
 - Sniff is a **separate firmware on the yellow deck**, not part of the LED panel firmware and not
   on the black deck (chosen over a wired CAN transceiver on CN1, which stays a later option).
   The lights are unavailable while the sniff firmware is on the deck.

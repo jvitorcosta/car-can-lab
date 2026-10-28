@@ -4,8 +4,8 @@
 // over WiFi from a PC on the iPhone hotspot:
 //   pio run -e sniff_ota -t upload          (here)
 //   pio run -e ledpanel_ota -t upload       (in spotify-pokemon-deck: the lights come back)
-// It reads the panel's touch calibration (NVS "touch"/"hom") and never writes it: with none
-// stored, the screen says so and the Xbox controller still drives everything.
+// Touch and the Xbox controller both drive every screen. Touch calibration (sniff/calib): its own,
+// else the LED panel's (read only), else the factory map; BOOT held 2 s calibrates.
 // Test hooks: -D STORE_TEST writes a recording of 1,000 made-up lines at boot (the download
 // check); -D NIGHT_TEST forces night mode.
 #include <Arduino.h>
@@ -23,6 +23,7 @@
 #include "net/ota.h"
 #include "net/remote_config.h"
 #include "net/wifi.h"
+#include "sniff/calib.h"
 #include "sniff/monitor.h"
 #include "sniff/screen.h"
 #include "sniff/store.h"
@@ -35,15 +36,7 @@
 static TFT_eSPI tft;
 static constexpr const char* MDNS_NAME = "cardeck-sniff";
 
-static bool loadCalibration() {
-    Preferences p;
-    if (!p.begin("touch", true)) return false;  // read-only: the namespace is the LED panel's
-    touchcal::Homography k;
-    const bool ok = p.getBytesLength("hom") == sizeof(k) && p.getBytes("hom", &k, sizeof(k)) == sizeof(k);
-    p.end();
-    if (ok) touch::setCalibration(k);
-    return ok;
-}
+static constexpr int PIN_BOOT = 0;
 
 // TFT_eSPI's ILI9341_2_DRIVER init leaves a flat gamma that washes this panel out; the standard
 // ILI9341 tables, as the LED panel sets them.
@@ -116,18 +109,11 @@ static void bleTask(void*) {
 // (held: repeats after 400 ms, every 150 ms; the sticks are ignored, as on the LED panel).
 static sniff::screen::Input readInput() {
     sniff::screen::Input in{};
-    static bool wasDown = false;
     static uint32_t loopStart = 0;
     if (loopStart == 0) loopStart = millis() | 1;
-    int x = 0, y = 0;
-    // the panel reports a phantom press at power-up: the first second is ignored
-    const bool down = touch::read(&x, &y) && millis() - loopStart > 1000;
-    if (down && !wasDown) {
-        in.tap = true;
-        in.x = x;
-        in.y = y;
-    }
-    wasDown = down;
+    // the panel reports a phantom press at power-up: the first second is ignored. The screen turns
+    // the readings into taps (settled, never carried over a page change).
+    in.touchDown = touch::read(&in.x, &in.y) && millis() - loopStart > 1000;
 
     in.pad = xbox.isConnected() && !xbox.isWaitingForFirstNotification();
     static bool padWas = false;
@@ -215,7 +201,12 @@ void setup() {
     tft.setAttribute(UTF8_SWITCH, 0);  // the texts are Latin-1 bytes, as on the LED panel
     vividGamma();
     touch::begin();
-    const bool calibrated = loadCalibration();
+    pinMode(PIN_BOOT, INPUT_PULLUP);
+    bool calibrated = sniff::calib::load();
+    if (digitalRead(PIN_BOOT) == LOW) {  // BOOT held at power-up: calibrate the touch
+        sniff::calib::run(tft);
+        calibrated = true;
+    }
     sniff::screen::begin(&tft, calibrated);
     sniff::screen::boot();
     sniff::store::begin();
@@ -254,6 +245,19 @@ void loop() {
         return;
     }
     updateDayNight();
+    // BOOT held for 2 s: calibrate the touch again.
+    static uint32_t bootSince = 0;
+    if (digitalRead(PIN_BOOT) == LOW) {
+        if (bootSince == 0) bootSince = millis() | 1;
+        else if (millis() - bootSince > 2000) {
+            sniff::calib::run(tft);
+            sniff::screen::setCalibrated(true);
+            sniff::screen::redraw();  // and touch waits for the pen to lift
+            bootSince = 0;
+        }
+    } else {
+        bootSince = 0;
+    }
     sniff::screen::loop(millis(), readInput());
     static uint32_t memAt = 0;
     if (millis() - memAt > 60000) {

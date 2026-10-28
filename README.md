@@ -3,7 +3,7 @@
 An ESP32 + ELM327-over-BLE toolkit for reverse engineering a car's CAN bus, built as a hobby and
 learning project. Its first hardware target is the **yellow deck**, an ESP32-2432S028R "Cheap
 Yellow Display" that normally runs a car LED panel (the
-[spotify-car-deck](https://github.com/jvitorcosta/spotify-car-deck) project). Its first
+[car-cyberdeck](https://github.com/jvitorcosta/car-cyberdeck) project). Its first
 car is a **Honda City**, whose standard OBD-II PIDs leave out two things worth having: the
 **gear** (P R N D S and the paddles) and the **fuel level** (no PID 2F). Both travel on the car's
 CAN bus as broadcast messages that nobody has documented for this car. This repo is the tool for

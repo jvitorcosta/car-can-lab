@@ -60,10 +60,11 @@ def watched(rec, cid, ms):
         return True
     times, wins = _watch_index(rec)
     k = bisect.bisect_right(times, ms) - 1
-    if k < 0 or wins[k] is None:
+    if k < 0:
         return False
-    filt, mask = wins[k]
-    return (cid & mask) == filt
+    # A window can open in the same ms as the last frame of the one before it: either one heard it.
+    first = bisect.bisect_left(times, ms)
+    return any(w is not None and (cid & w[1]) == w[0] for w in wins[max(0, min(first - 1, k)):k + 1])
 
 
 def changes(rec):

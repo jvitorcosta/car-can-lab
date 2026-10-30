@@ -1,0 +1,34 @@
+name: Adapter report
+description: Tell us how an OBD adapter behaved, good or bad.
+title: "Adapter: "
+labels: [adapter-report]
+body:
+  - type: markdown
+    attributes:
+      value: Run `python -m tools.sniff.adaptercheck` first. A "doesn't work" report helps as much as a "works" one.
+  - type: input
+    id: product
+    attributes:
+      label: Product
+      description: The brand and model, and a link if you have one.
+    validations:
+      required: true
+  - type: dropdown
+    id: link
+    attributes:
+      label: Link
+      options: [USB, Bluetooth Classic, BLE]
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: adaptercheck output
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: car
+    attributes:
+      label: Car
+      description: Make, model and year.

@@ -145,6 +145,15 @@ void test_transmitting_or_malformed_refused() {
         TEST_ASSERT_FALSE_MESSAGE(obd::allowed(c), c);
 }
 
+// gate.inc: the same list holds the PC's gate (tools/sniff/elm.py).
+void test_shared_vectors() {
+#define ALLOW(c) TEST_ASSERT_TRUE_MESSAGE(obd::allowed(c), c);
+#define REFUSE(c) TEST_ASSERT_FALSE_MESSAGE(obd::allowed(c), c);
+#include "gate.inc"
+#undef ALLOW
+#undef REFUSE
+}
+
 void test_new_pids_formulas() {
     float v = 0;
     TEST_ASSERT_EQUAL(Reply::Ok, obd::parse(Pid::PedalD, "41 49 80\n\n", &v));
@@ -213,6 +222,7 @@ int main() {
     RUN_TEST(test_writes_and_other_modes_are_refused);
     RUN_TEST(test_near_misses_are_refused);
     RUN_TEST(test_monitor_commands_allowed);
+    RUN_TEST(test_shared_vectors);
     RUN_TEST(test_transmitting_or_malformed_refused);
     RUN_TEST(test_requests_end_with_cr_and_are_read_only);
     RUN_TEST(test_formulas_at_their_ends);

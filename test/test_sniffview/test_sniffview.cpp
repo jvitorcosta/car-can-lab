@@ -14,6 +14,7 @@ void test_status_texts() {
     TEST_ASSERT_EQUAL_STRING("ADAPTER NOT FOUND", sniffview::statusText(State::Searching, 20000));
     TEST_ASSERT_EQUAL_STRING("CONNECTING...", sniffview::statusText(State::Probing, 0));
     TEST_ASSERT_EQUAL_STRING("NOT A CAN CAR?", sniffview::statusText(State::NotCan, 0));
+    TEST_ASSERT_EQUAL_STRING("29-BIT CAN: NOT SUPPORTED", sniffview::statusText(State::Bus29, 0));
     TEST_ASSERT_EQUAL_STRING("ADAPTER CAN'T MONITOR (NOT SILENT)", sniffview::statusText(State::NotSilent, 0));
     TEST_ASSERT_EQUAL_STRING("ADAPTER CAN'T MONITOR", sniffview::statusText(State::CantMonitor, 0));
     TEST_ASSERT_EQUAL_STRING("ENGINE OFF?", sniffview::statusText(State::EngineOff, 0));
@@ -27,6 +28,7 @@ void test_alerts_are_the_problems() {
     TEST_ASSERT_TRUE(sniffview::isAlert(State::Searching, 20000));
     TEST_ASSERT_FALSE(sniffview::isAlert(State::Probing, 0));
     TEST_ASSERT_TRUE(sniffview::isAlert(State::NotSilent, 0));
+    TEST_ASSERT_TRUE(sniffview::isAlert(State::Bus29, 0));
     TEST_ASSERT_TRUE(sniffview::isAlert(State::EngineOff, 0));
     TEST_ASSERT_TRUE(sniffview::isAlert(State::Lost, 0));
 }

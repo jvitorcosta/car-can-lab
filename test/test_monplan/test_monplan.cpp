@@ -182,9 +182,35 @@ void test_buffer_full_without_a_prompt_is_stopped() {
     expect(p, "\r");
 }
 
+static void probeTo0100(Plan& p) {
+    p.onLinkBack(now);
+    for (const char* c : {"ATZ\r", "ATE0\r", "ATL0\r", "ATS0\r", "ATH1\r", "ATSP0\r"}) {
+        expect(p, c);
+        reply(p, {c[2] == 'Z' ? "ELM327 v2.2" : "OK"});
+    }
+    expect(p, "0100\r");
+}
+
+// From the 0100 reply on, to the first window's monitor.
+static void afterSupport(Plan& p, const char* proto) {
+    expect(p, "ATDPN\r");
+    reply(p, {proto});
+    expect(p, "ATCSM1\r");
+    reply(p, {"OK"});
+    expect(p, "ATI\r");
+    reply(p, {"ELM327 v2.2"});
+    expect(p, "ATCF000\r");
+    reply(p, {"OK"});
+    expect(p, "ATCM780\r");
+    reply(p, {"OK"});
+    expect(p, "ATMA\r");
+}
+
 void test_recording_reads_rpm_and_coolant() {
     Plan p;
-    probe(p);
+    probeTo0100(p);
+    reply(p, {"7E8064100B63EB811"});  // no 05, like the Honda City: 0167
+    afterSupport(p, "6");
     const uint16_t ids[] = {0x1A6, 0x305};
     p.setRecording(true, ids, 2, now);
     now += Plan::OBD_EVERY_MS;
@@ -210,6 +236,44 @@ void test_recording_reads_rpm_and_coolant() {
     }
     TEST_ASSERT_TRUE(rpm);
     TEST_ASSERT_TRUE(coolant);
+}
+
+// A car that lists PID 05 (the 5th bit of the 0100 reply) gets the standard coolant read.
+void test_coolant_uses_05_when_the_car_lists_it() {
+    Plan p;
+    probeTo0100(p);
+    reply(p, {"7E806410008000000"});
+    afterSupport(p, "A6");
+    const uint16_t ids[] = {0x1A6};
+    p.setRecording(true, ids, 1, now);
+    now += Plan::OBD_EVERY_MS;
+    expect(p, "\r");
+    reply(p, {});
+    expect(p, "ATCF7E8\r");
+    reply(p, {"OK"});
+    expect(p, "ATCM7F8\r");
+    reply(p, {"OK"});
+    expect(p, "010C\r");
+    reply(p, {"7E804410C0CB0"});
+    expect(p, "0105\r");
+    reply(p, {"7E803410583"});
+    monplan::Note n;
+    bool coolant = false;
+    while (p.takeNote(&n))
+        if (n.kind == monplan::Note::Kind::Obd && strcmp(n.text, "coolant") == 0) coolant = n.value > 90 && n.value < 92;
+    TEST_ASSERT_TRUE(coolant);
+}
+
+void test_29_bit_buses_are_refused_by_name() {
+    for (const char* proto : {"7", "A9"}) {
+        Plan p;
+        probeTo0100(p);
+        reply(p, {"18DAF11006410098180013"});
+        expect(p, "ATDPN\r");
+        reply(p, {proto});
+        TEST_ASSERT_EQUAL(State::Bus29, p.state());
+        TEST_ASSERT_NULL(p.nextCommand(now));
+    }
 }
 
 void test_recording_freezes_the_windows_and_logs_them() {
@@ -405,6 +469,8 @@ int main() {
     RUN_TEST(test_buffer_full_splits_and_repeats_the_window);
     RUN_TEST(test_buffer_full_without_a_prompt_is_stopped);
     RUN_TEST(test_recording_reads_rpm_and_coolant);
+    RUN_TEST(test_coolant_uses_05_when_the_car_lists_it);
+    RUN_TEST(test_29_bit_buses_are_refused_by_name);
     RUN_TEST(test_recording_freezes_the_windows_and_logs_them);
     RUN_TEST(test_filter_watches_only_the_picks);
     RUN_TEST(test_link_lost_and_back_while_recording);

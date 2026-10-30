@@ -22,6 +22,14 @@ def test_read_gear_recording():
     assert rec.skipped == 0
 
 
+def test_a_frame_in_the_same_ms_as_the_next_window_was_heard():
+    rec = recording.parse_lines(["S 0 window 1A0/7FF", "F 10 1A0 01", "S 500 window 300/7FF", "S 600 window 1A0/7FF",
+                                 "M 1000 1", "F 1000 1A0 02", "S 1000 window 300/7FF", "S 1400 window 1A0/7FF"])
+    assert analyze.watched(rec, 0x1A0, 1000) and analyze.watched(rec, 0x300, 1000)
+    assert not analyze.watched(rec, 0x1A0, 550)
+    assert [(s.id, s.old, s.new) for s in analyze.suspects(rec, 1)] == [(0x1A0, 1, 2)]
+
+
 def test_byte_that_flips_after_a_mark_is_the_top_suspect():
     rec = recording.read(os.path.join(DATA, "gear.log"))
     s = analyze.suspects(rec, 2)

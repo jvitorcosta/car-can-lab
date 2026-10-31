@@ -1,0 +1,3 @@
+# Only for talking to an adapter from the PC. The analyzer, the converter and --simulate need nothing.
+pyserial>=3.5
+bleak>=0.22

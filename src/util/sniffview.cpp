@@ -8,6 +8,7 @@ const char* statusText(monplan::State s, uint32_t inStateMs) {
         case State::Searching: return inStateMs < NOT_FOUND_MS ? "SEARCHING..." : "ADAPTER NOT FOUND";
         case State::Probing: return "CONNECTING...";
         case State::NotCan: return "NOT A CAN CAR?";
+        case State::Bus29: return "29-BIT CAN: NOT SUPPORTED";
         case State::NotSilent: return "ADAPTER CAN'T MONITOR (NOT SILENT)";
         case State::CantMonitor: return "ADAPTER CAN'T MONITOR";
         case State::EngineOff: return "ENGINE OFF?";

@@ -1,0 +1,27 @@
+name: Bug report
+description: Something went wrong.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options: [ESP32 firmware, PC sniffer, Analyzer, Adapter check, Docs]
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Adapter, car and operating system
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or a short recording excerpt
+      description: Please don't paste a whole recording.
+      render: text

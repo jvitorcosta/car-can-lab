@@ -4,6 +4,12 @@
 
 Nothing here has been flashed to the deck yet: the owner flashes and checks each item.
 
+- [ ] PC tools, first real adapter: `adaptercheck` and `sniffer` over the clone's Classic COM port,
+  then over BLE, then the Vgate. Only fakes have tested them, so expect small fixes (baud search,
+  BLE characteristics, reply formats). Add the results to `docs/adapters.md`.
+- [ ] Boot on a build with no `SWAP_HINT`, and on one with it: two boot lines or three, the home
+  page's reminder present or not, and the LOGS page's address both on and off WiFi.
+
 - [ ] Task 1: from the running LED panel, `pio run -e sniff_ota -t upload` (PC on the hotspot).
   Expect the boot line `CAR-CAN-LAB // SNIFF`, no calibration message, `[ota] this firmware is
   good` on Serial. Then the deck repo's `pio run -e ledpanel_ota -t upload` puts the panel back

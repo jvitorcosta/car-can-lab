@@ -85,7 +85,7 @@ void Plan::queueObd() {
     push(Tag::ObdCF, "ATCF7E8\r");
     push(Tag::ObdCM, "ATCM7F8\r");
     push(Tag::Rpm, "010C\r");
-    push(Tag::Coolant, "0167\r");
+    push(Tag::Coolant, coolant05_ ? "0105\r" : "0167\r");
 }
 
 bool Plan::obdDue(uint32_t nowMs) const {
@@ -113,6 +113,7 @@ const char* Plan::nextCommand(uint32_t nowMs) {
         case State::Searching:
         case State::Lost:
         case State::NotCan:
+        case State::Bus29:
         case State::NotSilent:
         case State::CantMonitor: return nullptr;
         case State::EngineOff:
@@ -208,6 +209,9 @@ void Plan::answered(uint32_t nowMs) {
                     qn_ = 0;
                     retryAt_ = nowMs + ENGINE_RETRY_MS;
                     to(State::EngineOff, nowMs);
+                } else {
+                    const uint32_t supported[4] = {bits, 0, 0, 0};
+                    coolant05_ = obd::isSupported(supported, 0x05);
                 }
             } else if (strcmp(c, "ATDPN\r") == 0) {
                 char p[sizeof proto_];
@@ -216,6 +220,9 @@ void Plan::answered(uint32_t nowMs) {
                 if (!(d[0] >= '6' && d[0] <= '9' && d[1] == '\0')) {
                     qn_ = 0;
                     to(State::NotCan, nowMs);
+                } else if (d[0] == '7' || d[0] == '9') {  // the filters and the log are 11-bit
+                    qn_ = 0;
+                    to(State::Bus29, nowMs);
                 } else {
                     snprintf(proto_, sizeof proto_, "%s", p);
                 }
@@ -297,7 +304,8 @@ void Plan::answered(uint32_t nowMs) {
         }
         case Tag::Coolant: {
             float v = 0;
-            if (obd::parse(obd::Pid::CoolantX, reply_, &v) == obd::Reply::Ok && !std::isnan(v))
+            if (obd::parse(coolant05_ ? obd::Pid::Coolant : obd::Pid::CoolantX, reply_, &v) == obd::Reply::Ok &&
+                !std::isnan(v))
                 note(Note::Kind::Obd, "coolant", v);
             to(State::Monitoring, nowMs);
             queueWindow(nowMs);

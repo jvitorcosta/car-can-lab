@@ -3,17 +3,17 @@
 #include "sweep.h"
 // What to say to the ELM327 next, and what its answers mean (spec 2026-10-27 "Covering the bus").
 // The probe on every (re)connect, in this order: ATZ, ATE0, ATL0, ATS0, ATH1, ATSP0, 0100 (no
-// answer: ENGINE OFF?, again every ENGINE_RETRY_MS), ATDPN (must be a CAN protocol, 6-9 or A6-A9),
+// answer: ENGINE OFF?, again every ENGINE_RETRY_MS), ATDPN (must be 11-bit CAN: 6 or 8, A6 or A8; 7 and 9 are 29-bit, Bus29),
 // ATCSM1 (silent monitoring: must be OK, else NOT SILENT and never ATMA), ATI (the adapter's name
 // for the recording's header). Then, window by window (util/sweep): ATCF, ATCM, ATMA, dwell, '\r'
 // to stop, wait for the prompt. BUFFER FULL splits the window and runs it again. While recording,
 // every OBD_EVERY_MS: stop, open the filter to the engine's replies (ATCF7E8 / ATCM7F8), read rpm
-// (010C) and coolant (0167; the City has no 05), then the window again.
+// (010C) and coolant (0105 when the car's 0100 reply lists it, else 0167), then the window again.
 // Every command it returns passes obd::allowed (the device's link refuses anything else anyway).
 // Frames are the caller's: it parses each line (util/elmmon) for the table and the recording and
 // hands every line here too. PURE, host-tested.
 namespace monplan {
-enum class State : uint8_t { Searching, Probing, NotCan, NotSilent, CantMonitor, EngineOff, Monitoring, Querying, Lost };
+enum class State : uint8_t { Searching, Probing, NotCan, Bus29, NotSilent, CantMonitor, EngineOff, Monitoring, Querying, Lost };
 
 // For the recording: a state change ("window 1A0/7F0", "buffer full", "adapter lost", ...) or an
 // OBD value (text "rpm" / "coolant").
@@ -83,6 +83,7 @@ private:
     char reply_[160] = {};
     bool bufferFull_ = false, replanned_ = false, recording_ = false, lost_ = false;
     uint16_t filter_[96] = {}, frozen_[96] = {};
+    bool coolant05_ = false;
     int nFilter_ = 0, nFrozen_ = 0;
     uint32_t cycleStart_ = 0, cycleMs_ = 0, now_ = 0;
     char adapter_[32] = {}, proto_[8] = {};

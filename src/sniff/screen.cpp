@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <cstring>
+#include "../net/remote_config.h"
 #include "../net/wifi.h"
 #include "../ui/termfont.h"
 #include "../util/idtable.h"
@@ -173,6 +174,7 @@ static const char* hintFor(monplan::State s) {
         case monplan::State::Searching: return "ADAPTER IN? PHONE BLUETOOTH OFF?";
         case monplan::State::EngineOff: return "START THE ENGINE";
         case monplan::State::NotSilent: return "IT WOULD ACK ON THE BUS: NOT USED";
+        case monplan::State::Bus29: return "THE FILTERS ARE 11-BIT ONLY";
         case monplan::State::Lost: return "RECONNECTING...";
         default: return nullptr;
     }
@@ -330,7 +332,9 @@ static void drawHome(uint32_t nowMs) {
     tft->setTextColor(pal(st && sniffview::isAlert(v.state, v.inStateMs) ? termpal::ALERT : termpal::TEXT));
     text(line, ROW_X, 146, Face::SMALL, TL_DATUM);
     tft->setTextColor(pal(termpal::ALERT));
-    text("LIGHTS: FLASH LEDPANEL BACK", ROW_X, 170, Face::SMALL, TL_DATUM);
+#ifdef SWAP_HINT
+    text(SWAP_HINT, ROW_X, 170, Face::SMALL, TL_DATUM);
+#endif
     if (!calibrated) {
         tft->setTextColor(pal(termpal::ALERT));
         text("TOUCH UNCALIBRATED: HOLD BOOT 2 S", ROW_X, 194, Face::SMALL, TL_DATUM);
@@ -359,9 +363,8 @@ static void drawLogs() {
         snprintf(l, sizeof l, "%03d.log  %u KB", nums[i], static_cast<unsigned>((sizes[i] + 1023) / 1024));
         text(l, ROW_X, 44 + (i - first) * 21, Face::BODY, TL_DATUM);
     }
-    String ip = net::isOnline() ? net::deviceIp() : String("172.20.10.11");
-    char url[64];
-    snprintf(url, sizeof url, "http://%s/recs?k=<token>", ip.c_str());
+    char url[64] = "NO WIFI: NO DOWNLOADS";
+    if (net::isOnline()) snprintf(url, sizeof url, "http://%s/recs?k=<token>", net::deviceIp().c_str());
     tft->setTextColor(pal(termpal::MID));
     text(url, ROW_X, 176, Face::SMALL, TL_DATUM);
     box(LOGS_BACK, "BACK", false, false);
@@ -374,8 +377,12 @@ void begin(TFT_eSPI* t, bool cal) {
 
 void boot() {
     clearBg(0, 0, W, H);
-    static const char* const LINES[] = {"CAR-CAN-LAB // SNIFF", "LISTEN ONLY: SILENT MONITOR", "LIGHTS: FLASH LEDPANEL BACK"};
-    for (int i = 0; i < 3; i++) {
+    static const char* const LINES[] = {"CAR-CAN-LAB // SNIFF", "LISTEN ONLY: SILENT MONITOR",
+#ifdef SWAP_HINT
+                                        SWAP_HINT
+#endif
+    };
+    for (int i = 0; i < static_cast<int>(sizeof LINES / sizeof LINES[0]); i++) {
         tft->setTextColor(pal(i == 2 ? termpal::ALERT : termpal::TEXT));
         text(LINES[i], ROW_X, 20 + i * 24, Face::BODY, TL_DATUM);
         delay(250);

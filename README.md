@@ -9,6 +9,16 @@ documented for your model. car-can-lab is a **listen-only** toolkit for finding 
 ELM327 adapter: record the bus while you do something in the car, mark the moment, and let the
 tools point at the bytes that changed.
 
+**Status:** early. The tools are tested against simulated adapters; nothing has run on a real car
+yet. If you try it, an [adapter report](docs/adapters.md) helps a lot.
+
+## Why I built it
+
+My Honda City won't show me its gear or fuel level over standard OBD-II, so I built this to hunt
+for those signals on the CAN bus myself.
+
+## Quick start
+
 ```bash
 git clone https://github.com/jvitorcosta/car-can-lab
 cd car-can-lab
@@ -25,9 +35,6 @@ MARK 1 at 10.0 s:
 rpm (12 readings) tracks best:
   0C8 bytes 0-1 be  corr +0.948
 ```
-
-> **Status:** early. The tools are tested against simulated adapters; nothing has run on a real car
-> yet. If you try it, an [adapter report](docs/adapters.md) helps a lot.
 
 ## What you need
 
